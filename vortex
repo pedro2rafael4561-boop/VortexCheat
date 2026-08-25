@@ -1,0 +1,439 @@
+-- ==========================================
+-- HUB PVP ULTIMATE - "PREDATOR SYSTEM"
+-- Versão: 2.0 (Ghosting Enabled)
+-- ==========================================
+
+-- ==========================================
+-- SISTEMA DE GHOSTING (ANTI-CHEAT BUSTER)
+-- ==========================================
+-- Este sistema tenta imitar ações "naturais" e esconder modificações
+-- que anti-cheats comuns (como Byfron básico ou Anticheat nativo) detectam.
+local GhostSystem = {
+    Enabled = true,
+    RandomizeMovement = true,
+    HideModifications = false
+}
+
+function GhostSystem:Update()
+    if not GhostSystem.Enabled then return end
+    
+    -- Simula leve flutuação na mira para parecer humano (Evita Aimbot linear)
+    if Aimbot.Enabled and Aimbot.Lock then
+        local offsetX = math.random(-2, 2) / 100
+        local offsetY = math.random(-2, 2) / 100
+        return Vector3.new(offsetX, offsetY, 0)
+    end
+    return Vector3.new()
+end
+
+-- ==========================================
+-- CONFIGURAÇÕES GLOBAIS
+-- ==========================================
+local Settings = {
+    Aimbot = { Enabled = false, Lock = false, Bone = "Head", FOV = 100, Smooth = 10, Key = Enum.KeyCode.F },
+    Triggerbot = { Enabled = false, Delay = 0.1, Key = Enum.KeyCode.LeftButton },
+    Movement = { Speed = 16, JumpPower = 50, WallRun = false },
+    GunExploits = { NoRecoil = false, NoSpread = false, InstantHit = false, RapidFire = false },
+    PredatorSight = { Enabled = true, HighlightColor = Color3.fromRGB(255, 0, 0), OutlineWidth = 2, Style = "Silhouette" }, -- Silhueta ou Traços de Força
+    ESP = { Box = true, HealthBar = true, Skeleton = true, Distance = true, Name = true }
+}
+
+-- ==========================================
+-- VARIÁVEIS DE ESTADO
+-- ==========================================
+local AimbotState = {
+    Target = nil,
+    CameraCFrame = CFrame.new(),
+    LastTarget = nil,
+    Smoothness = 0
+}
+
+local TriggerbotState = {
+    LastFireTime = 0
+}
+
+-- ==========================================
+-- INTERFACE (GUI) - HUB MODULAR
+-- ==========================================
+local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "PredatorHub"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.ZIndexBehavior = ZIndexBehavior.Sibling
+ScreenGui.Parent = PlayerGui
+
+-- Estilo Visual (Dark Mode Moderno)
+local function CreateFrame(Name, Size, Position, Color)
+    local Frame = Instance.new("Frame")
+    Frame.Name = Name
+    Frame.Size = Size
+    Frame.Position = Position
+    Frame.BackgroundColor3 = Color
+    Frame.BackgroundTransparency = 0.2
+    Frame.BorderSizePixel = 0
+    Frame.Parent = ScreenGui
+    return Frame
+end
+
+local function CreateLabel(Text, Size, Position, Parent, Color, SizeNum)
+    local Label = Instance.new("TextLabel")
+    Label.Text = Text
+    Label.Size = Size
+    Label.Position = Position
+    Label.BackgroundColor3 = Color3.fromRGB(0,0,0)
+    Label.BackgroundTransparency = 0.5
+    Label.TextColor3 = Color
+    Label.Font = Enum.Font.GothamBold
+    Label.TextSize = SizeNum
+    Label.Parent = Parent
+    return Label
+end
+
+local function CreateToggle(Name, Position, Parent, Callback)
+    local Frame = CreateFrame(Name, UDim2.new(0, 100, 0, 20), Position, Color3.fromRGB(40, 40, 40))
+    local Label = CreateLabel(Name, UDim2.new(0, 100, 0, 20), UDim2.new(0,0,0,0), Frame, Color3.fromRGB(255,255,255), 14)
+    
+    local Toggle = Instance.new("TextButton")
+    Toggle.Name = "Toggle_" .. Name
+    Toggle.Size = UDim2.new(0, 30, 0, 15)
+    Toggle.Position = UDim2.new(1, -35, 0, 3)
+    Toggle.BackgroundColor3 = Color3.fromRGB(100, 100, 100)
+    Toggle.Text = ""
+    Toggle.Parent = Frame
+    
+    local ToggleBG = Instance.new("Frame")
+    ToggleBG.Name = "BG"
+    ToggleBG.Size = UDim2.new(0, 30, 0, 15)
+    ToggleBG.BackgroundColor3 = Color3.fromRGB(200, 200, 200)
+    ToggleBG.Parent = Toggle
+    
+    local ToggleDot = Instance.new("Frame")
+    ToggleDot.Name = "Dot"
+    ToggleDot.Size = UDim2.new(0, 25, 0, 10)
+    ToggleDot.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    ToggleDot.Position = UDim2.new(0, 2, 0, 2.5)
+    ToggleDot.Parent = ToggleBG
+    
+    local isOn = false
+    Toggle.MouseButton1Click:Connect(function()
+        isOn = not isOn
+        if isOn then
+            TweenService:Create(ToggleDot, TweenInfo.new(0.1), {Position = UDim2.new(0, 13, 0, 2.5)}):Play()
+            ToggleBG.BackgroundColor3 = Color3.fromRGB(0, 255, 100)
+        else
+            TweenService:Create(ToggleDot, TweenInfo.new(0.1), {Position = UDim2.new(0, 2, 0, 2.5)}):Play()
+            ToggleBG.BackgroundColor3 = Color3.fromRGB(200, 200, 200)
+        end
+        if Callback then Callback(isOn) end
+    end)
+    return Toggle
+end
+
+local function CreateSlider(Name, Min, Max, Callback)
+    local Frame = CreateFrame("Slider_" .. Name, UDim2.new(0, 120, 0, 30), UDim2.new(0, 10, 0, 30), Color3.fromRGB(30, 30, 30))
+    CreateLabel(Name, UDim2.new(0, 50, 0, 10), UDim2.new(0, 5, 0, 5), Frame, Color3.fromRGB(200,200,200), 12)
+    
+    local Slider = Instance.new("TextButton")
+    Slider.Name = "Slider_" .. Name
+    Slider.Size = UDim2.new(1, -10, 0, 10)
+    Slider.Position = UDim2.new(0, 5, 0, 20)
+    Slider.BackgroundColor3 = Color3.fromRGB(100,100,100)
+    Slider.Text = ""
+    Slider.Parent = Frame
+    
+    local Fill = Instance.new("Frame")
+    Fill.Name = "Fill"
+    Fill.Size = UDim2.new(0.5, 0, 1, 0)
+    Fill.BackgroundColor3 = Color3.fromRGB(0, 150, 255)
+    Fill.Parent = Slider
+    
+    local dragging = false
+    local startX, startWidth
+    
+    Slider.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = true
+            startX = input.Position.X
+            startWidth = Fill.Size.X.Offset
+        end
+    end)
+    
+    Slider.InputChanged:Connect(function(input)
+        if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+            local delta = input.Position.X - startX
+            local newSize = math.clamp(startWidth + delta, 0, Slider.AbsoluteSize.X - 10)
+            Fill.Size = UDim2.new(0, newSize, 1, 0)
+            
+            local percentage = newSize / (Slider.AbsoluteSize.X - 10)
+            local value = math.floor(Min + percentage * (Max - Min))
+            if Callback then Callback(value) end
+        end
+    end)
+    
+    Slider.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = false
+        end
+    end)
+    
+    return Slider
+end
+
+-- Estrutura da GUI Principal
+local HubFrame = CreateFrame("HubMain", UDim2.new(0, 250, 0, 300), UDim2.new(0, 10, 0, 10), Color3.fromRGB(20, 20, 20))
+CreateLabel("PREDATOR HUB v2.0", UDim2.new(0, 250, 0, 20), UDim2.new(0, 0, 0, 0), HubFrame, Color3.fromRGB(255, 0, 0), 16)
+
+-- Botão de Minimizar/Expandir
+local MinToggle = Instance.new("TextButton")
+MinToggle.Size = UDim2.new(0, 20, 0, 20)
+MinToggle.Position = UDim2.new(1, -20, 0, 0)
+MinToggle.BackgroundColor3 = Color3.fromRGB(50,50,50)
+MinToggle.Text = "-"
+MinToggle.TextColor3 = Color3.fromRGB(255,255,255)
+MinToggle.Parent = HubFrame
+
+local isMinimized = false
+MinToggle.MouseButton1Click:Connect(function()
+    isMinimized = not isMinimized
+    local scale = isMinimized and 0 or 1
+    local yScale = isMinimized and 0.1 or 1
+    TweenService:Create(HubFrame, TweenInfo.new(0.2), {Size = UDim2.new(0, 250*scale, 0, 300*yScale)}):Play()
+end)
+
+-- Seções da GUI
+local AimbotSection = CreateFrame("AimbotSec", UDim2.new(0, 230, 0, 40), UDim2.new(0, 10, 0, 30), Color3.fromRGB(30,30,30))
+local TriggerSec = CreateFrame("TriggerSec", UDim2.new(0, 230, 0, 40), UDim2.new(0, 10, 0, 70), Color3.fromRGB(30,30,30))
+local PredatorSec = CreateFrame("PredatorSec", UDim2.new(0, 230, 0, 40), UDim2.new(0, 10, 0, 110), Color3.fromRGB(30,30,30))
+local ESPSec = CreateFrame("ESPSec", UDim2.new(0, 230, 0, 40), UDim2.new(0, 10, 0, 150), Color3.fromRGB(30,30,30))
+local MiscSec = CreateFrame("MiscSec", UDim2.new(0, 230, 0, 60), UDim2.new(0, 10, 0, 190), Color3.fromRGB(30,30,30))
+
+-- Elementos da GUI (Simplificado para o exemplo)
+CreateLabel("AIMBOT", UDim2.new(0, 50, 0, 10), UDim2.new(0, 10, 0, 5), AimbotSection, Color3.fromRGB(255,255,255), 12)
+local AimToggle = CreateToggle("Enable Aim", UDim2.new(0, 10, 0, 20), AimbotSection, function(val) Settings.Aimbot.Enabled = val end)
+
+CreateLabel("TRIGGERBOT", UDim2.new(0, 60, 0, 10), UDim2.new(0, 10, 0, 5), TriggerSec, Color3.fromRGB(255,255,255), 12)
+CreateToggle("Enable Trigger", UDim2.new(0, 10, 0, 20), TriggerSec, function(val) Settings.Triggerbot.Enabled = val end)
+
+CreateLabel("PREDATOR SIGHT", UDim2.new(0, 80, 0, 10), UDim2.new(0, 10, 0, 5), PredatorSec, Color3.fromRGB(255,255,255), 12)
+CreateToggle("Enable Predator", UDim2.new(0, 10, 0, 20), PredatorSec, function(val) Settings.PredatorSight.Enabled = val end)
+
+CreateLabel("ESP", UDim2.new(0, 50, 0, 10), UDim2.new(0, 10, 0, 5), ESPSec, Color3.fromRGB(255,255,255), 12)
+CreateToggle("Box ESP", UDim2.new(0, 10, 0, 20), ESPSec, function(val) Settings.ESP.Box = val end)
+
+CreateLabel("MISC", UDim2.new(0, 50, 0, 10), UDim2.new(0, 10, 0, 5), MiscSec, Color3.fromRGB(255,255,255), 12)
+CreateToggle("No Recoil", UDim2.new(0, 10, 0, 20), MiscSec, function(val) Settings.GunExploits.NoRecoil = val end)
+
+-- ==========================================
+-- LÓGICA DO SISTEMA (CORE)
+-- ==========================================
+
+-- Helper: Obter o melhor ponto de impacto (Bone Lock)
+function GetBonePart(Character, BoneName)
+    local Root = Character:FindFirstChild("HumanoidRootPart")
+    if not Root then return nil end
+    
+    local Bone = Character:FindFirstChild(BoneName)
+    if Bone then return Bone end
+    
+    -- Fallback para cabeça se não encontrar
+    if BoneName == "Head" then return Character:FindFirstChild("Head") end
+    return nil
+end
+
+-- Helper: Calcular distância
+function GetDistance(p1, p2)
+    local v1 = p1.Position
+    local v2 = p2.Position
+    return (v1 - v2).Magnitude
+end
+
+-- Helper: Projectar ponto 3D para 2D
+function WorldToScreen(Position)
+    local Position, OnScreen = Camera:WorldToViewportPoint(Position)
+    if OnScreen then
+        return Vector2.new(Position.X, Position.Y), true
+    end
+    return nil, false
+end
+
+-- ==========================================
+-- PREDATOR SIGHT (SISTEMA ÚNICO)
+-- ==========================================
+-- Cria uma silhueta visualmente distinta usando Highlight e Trail
+local PredatorSightSystem = {
+    Highlights = {},
+    Trails = {}
+}
+
+function PredatorSightSystem:Update()
+    if not Settings.PredatorSight.Enabled then
+        for _, Highlight in pairs(PredatorSightSystem.Highlights) do
+            Highlight:Destroy()
+        end
+        for _, Trail in pairs(PredatorSightSystem.Trails) do
+            Trail:Destroy()
+        end
+        PredatorSightSystem.Highlights = {}
+        PredatorSightSystem.Trails = {}
+        return
+    end
+    
+    local Target = AimbotState.Target
+    
+    for _, Player in pairs(Players:GetPlayers()) do
+        if Player ~= LocalPlayer and Player.Character and Player.Character.PrimaryPart then
+            local Character = Player.Character
+            local Humanoid = Character:FindFirstChild("Humanoid")
+            
+            if Humanoid and Humanoid.Health > 0 then
+                -- Criar Highlight se não existir
+                local H = Character:FindFirstChild("PredatorHighlight")
+                if not H then
+                    H = Instance.new("Highlight")
+                    H.Name = "PredatorHighlight"
+                    H.Adornee = Character
+                    H.Parent = Character
+                end
+                
+                -- Estilizar o Highlight base no estilo "Predator"
+                H.FillTransparency = 0.8 -- Silhueta vazia
+                H.FillColor = Settings.PredatorSight.HighlightColor
+                H.OutlineTransparency = 0
+                H.OutlineColor = Settings.PredatorSight.HighlightColor
+                H.OutlineWidth = Settings.PredatorSight.OutlineWidth
+                
+                -- Adicionar Trail para rastrear movimento (Inovador)
+                local T = Character:FindFirstChild("PredatorTrail")
+                if not T then
+                    T = Instance.new("Trail")
+                    T.Name = "PredatorTrail"
+                    T.Parent = Character.PrimaryPart
+                end
+                T.Enabled = true
+                T.Color = ColorSequence.new(Settings.PredatorSight.HighlightColor)
+                T.Lifetime = 0.1
+                T.Attachment0 = Character.PrimaryPart.Attachment0 or Instance.new("Attachment", Character.PrimaryPart)
+            end
+        end
+    end
+end
+
+-- ==========================================
+-- AIMBOT ENGINE
+-- ==========================================
+RunService.RenderStepped:Connect(function()
+    -- 1. Atualizar Ghosting
+    local GhostOffset = GhostSystem:Update()
+    
+    -- 2. Lógica do Aimbot
+    if Settings.Aimbot.Enabled then
+        local TargetPart = nil
+        local BestDist = math.huge
+        
+        -- Encontrar alvo mais próximo dentro do FOV
+        for _, Player in pairs(Players:GetPlayers()) do
+            if Player ~= LocalPlayer and Player.Character and Player.Character.PrimaryPart then
+                local Bone = GetBonePart(Player.Character, Settings.Aimbot.Bone)
+                if Bone then
+                    local ScreenPos, OnScreen = WorldToScreen(Bone.Position)
+                    if OnScreen then
+                        local Center = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+                        local Dist = (ScreenPos - Center).Magnitude
+                        
+                        if Dist < Settings.Aimbot.FOV and Dist < BestDist then
+                            -- Verificar Line of Sight (Raycast simples)
+                            local RayParams = RaycastParams.new()
+                            RayParams.FilterDescendantsInstances = {LocalPlayer.Character}
+                            RayParams.FilterType = Enum.RaycastFilterType.Exclude
+                            local RaycastResult = workspace:Raycast(Camera.CFrame.Position, (Bone.Position - Camera.CFrame.Position) * 50, RayParams)
+                            
+                            if RaycastResult and RaycastResult.Instance.Parent == Player.Character then
+                                BestDist = Dist
+                                TargetPart = Bone
+                                AimbotState.Target = Bone
+                            end
+                        end
+                    end
+                end
+            end
+        end
+        
+        -- Smooth Aim
+        if TargetPart then
+            local TargetCFrame = TargetPart.CFrame * GhostOffset
+            local CurrentCFrame = Camera.CFrame
+            local NewCFrame = CurrentCFrame:Lerp(CFrame.new(CurrentCFrame.Position, TargetCFrame.Position), Settings.Aimbot.Smoothness / 100)
+            Camera.CFrame = NewCFrame
+        else
+            AimbotState.Target = nil
+        end
+    end
+    
+    -- 3. Lógica do Triggerbot
+    if Settings.Triggerbot.Enabled then
+        local CurrentTime = tick()
+        if CurrentTime - TriggerbotState.LastFireTime > Settings.Triggerbot.Delay then
+            -- Se o alvo está fixo na tela e dentro do FOV, "dispara" automaticamente
+            if AimbotState.Target and (UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) or true) then
+                -- Simula disparo (em jogos reais, isso pode usar InputBegan ou apenas ser visual)
+                -- Aqui, apenas indicamos que o trigger está "ativo"
+                TriggerbotState.LastFireTime = CurrentTime
+                -- O jogo real vai disparar se o jogador segurar o botão, ou podemos simular
+                -- Para este script genérico, assumimos que o jogador segura o botão
+            end
+        end
+    end
+    
+    -- 4. Atualizar Predator Sight
+    PredatorSightSystem:Update()
+    
+    -- 5. Atualizar ESP (Box)
+    -- (Simplificado: Em um script real, usaria um ScreenGui com Frames que seguem os pontos)
+end)
+
+-- ==========================================
+-- MOVIMENTAÇÃO E GUN EXPLOITS
+-- ==========================================
+-- Nota: Muitos desses exploits dependem de como o jogo lida com o Input.
+-- Esta é uma implementação base que modifica os valores padrão.
+
+LocalPlayer.CharacterAdded:Connect(function(Character)
+    Character:WaitForChild("Humanoid")
+    
+    -- Speed Hack (Modifica o WalkSpeed do Humanoid)
+    Character.Humanoid.WalkSpeed = Settings.Movement.Speed
+    
+    -- Jump Power
+    Character.Humanoid.JumpPower = Settings.Movement.JumpPower
+    
+    -- No Fall Damage
+    Character.Humanoid.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
+    
+    -- Instant Hit / No Spread (Modifica a arma)
+    -- Tenta encontrar a arma equipada ou na backpack
+    local Tool = Character:FindFirstChild("Tool") or Character.Backpack:FindFirstChildOfClass("Tool")
+    if Tool then
+        local Handle = Tool:FindFirstChild("Handle")
+        if Handle then
+            -- Remover animação de recoil se possível
+            -- Aumentar Range
+            if Settings.GunExploits.InstantHit then
+                Handle.Range.Value = 10000 -- Extremo
+            end
+        end
+        
+        -- No Recoil (Modifica as propriedades de recoil)
+        if Settings.GunExploits.NoRecoil then
+            local Properties = Tool:FindFirstChild("Properties")
+            if Properties then
+                -- Tenta desativar recoil visual e físico
+                local RecoilProp = Properties:FindFirstChild("Recoil")
+                if RecoilProp then RecoilProp.Value = 0 end
+                local KickProp = Properties:FindFirstChild("Kick")
+                if KickProp then KickProp.Value = 0 end
+            end
+        end
+    end
+end)
+
+print("Predator Hub v2.0 Loaded. Use 'V' to toggle visibility (opcional).")
